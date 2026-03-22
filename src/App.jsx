@@ -297,7 +297,7 @@ function ResultsView({ items, title }) {
       {title && (
         <div style={{background:"#ffffff08",borderRadius:12,padding:"12px 16px",marginBottom:10,border:"1px solid #ffffff10",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
           <div style={{fontSize:14,fontWeight:700,color:"#eee"}}>{title}</div>
-          <div style={{fontSize:11,color:"#888"}}>{active.length}台 / 平均{avg>=0?"+":""}{avg.toLocaleString()}玉 / <span style={{color:"#34C759"}}>勝{plus}</span> <span style={{color:"#FF375F"}}>負{minus}</span></div>
+          <div style={{fontSize:11,color:"#888"}}>{items.length}台{active.length!==items.length?`(稼働${active.length})`:""} / 平均{avg>=0?"+":""}{avg.toLocaleString()}玉 / <span style={{color:"#34C759"}}>勝{plus}</span> <span style={{color:"#FF375F"}}>負{minus}</span></div>
         </div>
       )}
       <div style={{background:"#ffffff08",borderRadius:12,padding:"12px 16px",marginBottom:10,border:"1px solid #ffffff10"}}>
