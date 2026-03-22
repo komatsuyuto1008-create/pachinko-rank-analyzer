@@ -450,10 +450,10 @@ export default function App() {
 
   return (
     <div style={{minHeight:"100vh",background:"#0a0a0f",color:"#e8e8ed",fontFamily:"'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif"}}>
-      <div style={{background:"linear-gradient(135deg,#1a1a2e,#16213e)",borderBottom:"1px solid #ffffff12",padding:"16px 20px"}}>
-        <div style={{maxWidth:900,margin:"0 auto",display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:38,height:38,borderRadius:9,background:"linear-gradient(135deg,#FF2D55,#FF9500)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,fontWeight:800,color:"#fff"}}>差</div>
-          <div><h1 style={{margin:0,fontSize:17,fontWeight:700}}>差玉ランクアナライザー</h1><p style={{margin:0,fontSize:10,color:"#8e8ea0",marginTop:1}}>出玉推移グラフ → ピクセル解析 → S〜Gランク判定</p></div>
+      <div style={{background:"linear-gradient(135deg,#1a1a2e,#16213e)",borderBottom:"1px solid #ffffff08",padding:"calc(env(safe-area-inset-top, 0px) + 12px) 20px 12px"}}>
+        <div style={{maxWidth:900,margin:"0 auto",display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:34,height:34,borderRadius:8,background:"linear-gradient(135deg,#FF2D55,#FF9500)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:"#fff",flexShrink:0}}>差</div>
+          <div><h1 style={{margin:0,fontSize:15,fontWeight:700}}>差玉ランクアナライザー</h1><p style={{margin:0,fontSize:9,color:"#8e8ea0",marginTop:1}}>出玉推移グラフ → ピクセル解析 → S〜Gランク判定</p></div>
         </div>
       </div>
       <div style={{maxWidth:900,margin:"0 auto",padding:"16px 14px"}}>
@@ -465,7 +465,7 @@ export default function App() {
 
         {tab==="analyze"&&(<>
           <div onClick={()=>fileRef.current?.click()} onDrop={e=>{e.preventDefault();handleFiles(e.dataTransfer.files);}} onDragOver={e=>e.preventDefault()}
-            style={{border:"2px dashed #ffffff20",borderRadius:14,padding:images.length?"12px":"32px 20px",textAlign:"center",cursor:"pointer",background:"#ffffff06",marginBottom:10}}>
+            style={{border:"1.5px dashed #ffffff15",borderRadius:14,padding:images.length?"12px":"32px 20px",textAlign:"center",cursor:"pointer",background:"#ffffff06",marginBottom:10}}>
             <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{handleFiles(e.target.files);e.target.value="";}} />
             {!images.length?(<><div style={{fontSize:32,marginBottom:4}}>📊</div><p style={{fontSize:13,fontWeight:600,color:"#ccc",margin:"0 0 3px"}}>出玉推移グラフ画像をアップロード</p><p style={{fontSize:10,color:"#666",margin:0}}>複数ページまとめて選択可能</p></>):(
               <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"center",alignItems:"center"}}>
