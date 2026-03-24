@@ -544,6 +544,307 @@ function MachineManager({ presets, onSavePreset, onDeletePreset }) {
   );
 }
 
+// ============ Pachi Tracker ============
+const PACHI_FIELDS = [
+  { key: "name", label: "機種名", type: "text" },
+  { key: "probability", label: "大当り確率", type: "number", step: "0.1" },
+  { key: "border", label: "ボーダー(1k)", type: "number", step: "0.01" },
+  { key: "balls", label: "賞球数", type: "number" },
+  { key: "spinCost", label: "回転単価", type: "number", step: "0.1" },
+  { key: "avgPayout", label: "1大当たり平均出玉（削り込み）", type: "number" },
+  { key: "stdDev", label: "標準偏差", type: "number" },
+  { key: "initialProb", label: "初期確率", type: "number", step: "0.01" },
+  { key: "muraCoef", label: "ムラ係数", type: "number" },
+  { key: "spatialSensitivity", label: "空間感応度", type: "number" },
+  { key: "regimeSensitivity", label: "レジーム感応度", type: "number" },
+  { key: "hesoAvgAuto", label: "ヘソ平均出玉(自動)", type: "text" },
+  { key: "rushAvgPayout", label: "RUSH平均出玉", type: "number" },
+  { key: "rushEntryRate", label: "RUSH突入率", type: "text" },
+  { key: "rushContinueRate", label: "RUSH継続率", type: "text" },
+  { key: "manualValue", label: "手動入力値(優先)", type: "text" },
+  { key: "heso1Payout", label: "【ヘソ1】出玉", type: "number" },
+  { key: "heso1Ratio", label: "【ヘソ1】比率", type: "text" },
+  { key: "heso2Payout", label: "【ヘソ2】出玉", type: "number" },
+  { key: "heso2Ratio", label: "【ヘソ2】比率", type: "text" },
+  { key: "heso3Payout", label: "【ヘソ3】出玉", type: "number" },
+  { key: "heso3Ratio", label: "【ヘソ3】比率", type: "text" },
+  { key: "mcExpectedDaily", label: "MC期待日当", type: "number" },
+  { key: "mcWinRate", label: "MC勝率", type: "text" },
+];
+
+const CSV_HEADERS = PACHI_FIELDS.map(f => f.label);
+
+function PachiTracker({ machines, onSave, onDelete }) {
+  const [editingMachine, setEditingMachine] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [formData, setFormData] = useState({});
+  const [searchQuery, setSearchQuery] = useState("");
+  const [importText, setImportText] = useState("");
+  const [showImport, setShowImport] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const filteredMachines = useMemo(() => {
+    if (!searchQuery.trim()) return machines;
+    const q = searchQuery.toLowerCase();
+    return machines.filter(m => m.name?.toLowerCase().includes(q));
+  }, [machines, searchQuery]);
+
+  const createEmptyForm = () => PACHI_FIELDS.reduce((acc, f) => ({ ...acc, [f.key]: "" }), {});
+
+  const startCreate = () => {
+    setEditingMachine(null);
+    setFormData(createEmptyForm());
+    setIsCreating(true);
+  };
+
+  const startEdit = (machine) => {
+    setEditingMachine(machine.name);
+    setFormData({ ...machine });
+    setIsCreating(false);
+  };
+
+  const cancelEdit = () => {
+    setEditingMachine(null);
+    setIsCreating(false);
+    setFormData({});
+  };
+
+  const saveForm = () => {
+    if (!formData.name?.trim()) return;
+    if (editingMachine && editingMachine !== formData.name.trim()) {
+      onDelete(editingMachine);
+    }
+    onSave({ ...formData, name: formData.name.trim() });
+    cancelEdit();
+  };
+
+  const exportCSV = () => {
+    if (machines.length === 0) return;
+    const headerRow = CSV_HEADERS.join(",");
+    const dataRows = machines.map(m =>
+      PACHI_FIELDS.map(f => {
+        const val = m[f.key] ?? "";
+        const str = String(val);
+        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      }).join(",")
+    );
+    const csv = [headerRow, ...dataRows].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pachinko_machines_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const parseCSV = (text) => {
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+
+    const parseCSVLine = (line) => {
+      const result = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === "," && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
+
+    const headers = parseCSVLine(lines[0]);
+    const headerMap = {};
+    headers.forEach((h, i) => {
+      const field = PACHI_FIELDS.find(f => f.label === h);
+      if (field) headerMap[i] = field.key;
+    });
+
+    const imported = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const values = parseCSVLine(lines[i]);
+      const machine = {};
+      values.forEach((val, idx) => {
+        if (headerMap[idx]) {
+          machine[headerMap[idx]] = val;
+        }
+      });
+      if (machine.name) imported.push(machine);
+    }
+    return imported;
+  };
+
+  const handleImport = () => {
+    const imported = parseCSV(importText);
+    imported.forEach(m => onSave(m));
+    setImportText("");
+    setShowImport(false);
+  };
+
+  const handleFileImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result;
+      if (typeof text === "string") {
+        const imported = parseCSV(text);
+        imported.forEach(m => onSave(m));
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const inputStyle = { width: "100%", padding: "7px 8px", borderRadius: 6, border: "1px solid #ffffff20", background: "#ffffff08", color: "#e8e8ed", fontSize: 12, boxSizing: "border-box" };
+  const labelStyle = { fontSize: 10, color: "#888", display: "block", marginBottom: 2 };
+
+  const renderForm = () => (
+    <div style={{ background: "#ffffff08", borderRadius: 14, padding: "16px", border: "1px solid #5AC8FA40", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#5AC8FA" }}>
+          {isCreating ? "新規機種登録" : "機種を編集"}
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
+        {PACHI_FIELDS.map(f => (
+          <div key={f.key}>
+            <label style={labelStyle}>{f.label}</label>
+            <input
+              type={f.type}
+              step={f.step}
+              value={formData[f.key] || ""}
+              onChange={e => setFormData(prev => ({ ...prev, [f.key]: e.target.value }))}
+              style={inputStyle}
+            />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button onClick={cancelEdit} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "1px solid #ffffff20", background: "transparent", color: "#888", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>キャンセル</button>
+        <button onClick={saveForm} disabled={!formData.name?.trim()}
+          style={{ flex: 2, padding: "10px", borderRadius: 8, border: "none", background: formData.name?.trim() ? "linear-gradient(135deg, #5AC8FA, #34C759)" : "#333", color: formData.name?.trim() ? "#fff" : "#888", fontSize: 13, fontWeight: 700, cursor: formData.name?.trim() ? "pointer" : "default" }}>
+          {isCreating ? "登録する" : "保存する"}
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderImport = () => (
+    <div style={{ background: "#ffffff08", borderRadius: 14, padding: "16px", border: "1px solid #FF950040", marginBottom: 12 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "#FF9500", marginBottom: 12 }}>CSVインポート</div>
+      <p style={{ fontSize: 11, color: "#888", margin: "0 0 8px" }}>
+        ヘッダー行 + データ行のCSVを貼り付けてください
+      </p>
+      <textarea
+        value={importText}
+        onChange={e => setImportText(e.target.value)}
+        placeholder={CSV_HEADERS.join(",") + "\nP大海物語5 MTE2,319.6,17.36,3,..."}
+        style={{ width: "100%", minHeight: 120, padding: 10, borderRadius: 8, border: "1px solid #ffffff15", background: "#ffffff08", color: "#e8e8ed", fontSize: 11, fontFamily: "monospace", resize: "vertical", boxSizing: "border-box" }}
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <button onClick={() => { setShowImport(false); setImportText(""); }} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "1px solid #ffffff20", background: "transparent", color: "#888", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>キャンセル</button>
+        <button onClick={handleImport} disabled={!importText.trim()}
+          style={{ flex: 2, padding: "10px", borderRadius: 8, border: "none", background: importText.trim() ? "linear-gradient(135deg, #FF9500, #FF2D55)" : "#333", color: importText.trim() ? "#fff" : "#888", fontSize: 13, fontWeight: 700, cursor: importText.trim() ? "pointer" : "default" }}>
+          インポート実行
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ background: "#ffffff06", borderRadius: 12, padding: "16px", border: "1px solid #ffffff10" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#eee" }}>パチトラッカー</h3>
+        {!isCreating && !editingMachine && !showImport && (
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={startCreate} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: "linear-gradient(135deg, #5AC8FA, #34C759)", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+              + 新規登録
+            </button>
+            <button onClick={() => setShowImport(true)} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #FF950050", background: "#FF950015", color: "#FF9500", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+              インポート
+            </button>
+            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: "none" }} onChange={handleFileImport} />
+            <button onClick={() => fileInputRef.current?.click()} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #FF950050", background: "#FF950015", color: "#FF9500", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+              CSV読込
+            </button>
+            {machines.length > 0 && (
+              <button onClick={exportCSV} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #34C75950", background: "#34C75915", color: "#34C759", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                エクスポート
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {showImport && renderImport()}
+      {(isCreating || editingMachine) && renderForm()}
+
+      {!isCreating && !editingMachine && !showImport && (
+        <>
+          <div style={{ marginBottom: 12 }}>
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="機種名で検索..."
+              style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #ffffff15", background: "#ffffff08", color: "#e8e8ed", fontSize: 12, boxSizing: "border-box" }}
+            />
+          </div>
+
+          {filteredMachines.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "24px 12px", color: "#666" }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
+              <div style={{ fontSize: 12 }}>{machines.length === 0 ? "登録された機種がありません" : "検索結果がありません"}</div>
+              {machines.length === 0 && (
+                <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>「新規登録」または「インポート」から機種を追加できます</div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {filteredMachines.map(machine => (
+                <div key={machine.name} style={{ background: "#ffffff08", borderRadius: 10, padding: "12px 14px", border: "1px solid #ffffff10" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#eee", marginBottom: 4 }}>{machine.name}</div>
+                      <div style={{ fontSize: 10, color: "#888", display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {machine.probability && <span>確率: 1/{machine.probability}</span>}
+                        {machine.border && <span>ボーダー: {machine.border}</span>}
+                        {machine.rushEntryRate && <span>RUSH突入: {machine.rushEntryRate}</span>}
+                        {machine.mcWinRate && <span>勝率: {machine.mcWinRate}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button onClick={() => startEdit(machine)} style={{ padding: "5px 10px", borderRadius: 5, border: "1px solid #34C75940", background: "#34C75915", color: "#34C759", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>編集</button>
+                      <button onClick={() => onDelete(machine.name)} style={{ padding: "5px 8px", borderRadius: 5, border: "1px solid #FF2D5540", background: "#FF2D5515", color: "#FF6B8A", fontSize: 10, cursor: "pointer" }}>削除</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ============ Main App ============
 export default function App() {
   const [images, setImages] = useState([]);
@@ -560,6 +861,7 @@ export default function App() {
   const [manualTitle, setManualTitle] = useState("");
   const [error, setError] = useState(null);
   const [presets, setPresets] = useState([]);
+  const [pachiMachines, setPachiMachines] = useState([]);
   const fileRef = useRef(null);
 
   useEffect(() => {
@@ -570,6 +872,13 @@ export default function App() {
         if (Array.isArray(parsed)) setPresets(parsed);
       }
     } catch (e) { /* no presets yet */ }
+    try {
+      const storedPachi = localStorage.getItem("pachi-tracker-machines");
+      if (storedPachi) {
+        const parsed = JSON.parse(storedPachi);
+        if (Array.isArray(parsed)) setPachiMachines(parsed);
+      }
+    } catch (e) { /* no machines yet */ }
   }, []);
 
   const savePreset = useCallback((newPreset) => {
@@ -583,6 +892,18 @@ export default function App() {
     setPresets(updated);
     try { localStorage.setItem("sagyoku-presets", JSON.stringify(updated)); } catch (e) {}
   }, [presets]);
+
+  const savePachiMachine = useCallback((newMachine) => {
+    const updated = [...pachiMachines.filter(m => m.name !== newMachine.name), newMachine];
+    setPachiMachines(updated);
+    try { localStorage.setItem("pachi-tracker-machines", JSON.stringify(updated)); } catch (e) {}
+  }, [pachiMachines]);
+
+  const deletePachiMachine = useCallback((name) => {
+    const updated = pachiMachines.filter(m => m.name !== name);
+    setPachiMachines(updated);
+    try { localStorage.setItem("pachi-tracker-machines", JSON.stringify(updated)); } catch (e) {}
+  }, [pachiMachines]);
 
   const handleFiles = useCallback((files) => {
     const arr = Array.from(files).filter(f=>f.type.startsWith("image/"));
@@ -675,6 +996,7 @@ export default function App() {
           <button style={tS(tab==="analyze")} onClick={()=>setTab("analyze")}>画像解析</button>
           <button style={tS(tab==="manual")} onClick={()=>setTab("manual")}>手動入力</button>
           <button style={tS(tab==="machines")} onClick={()=>setTab("machines")}>機種管理</button>
+          <button style={tS(tab==="pachitracker")} onClick={()=>setTab("pachitracker")}>パチトラ</button>
           <button style={tS(tab==="legend")} onClick={()=>setTab("legend")}>基準</button>
         </div>
 
@@ -727,6 +1049,14 @@ export default function App() {
             presets={presets}
             onSavePreset={savePreset}
             onDeletePreset={deletePreset}
+          />
+        )}
+
+        {tab==="pachitracker"&&(
+          <PachiTracker
+            machines={pachiMachines}
+            onSave={savePachiMachine}
+            onDelete={deletePachiMachine}
           />
         )}
 
