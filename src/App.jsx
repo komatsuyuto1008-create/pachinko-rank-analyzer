@@ -330,6 +330,220 @@ function ResultsView({ items, title }) {
   );
 }
 
+// ============ Machine Manager ============
+function MachineManager({ presets, onSavePreset, onDeletePreset }) {
+  const [editingPreset, setEditingPreset] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [formData, setFormData] = useState({ name: "", segments: [{ start: "", count: "" }] });
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredPresets = useMemo(() => {
+    if (!searchQuery.trim()) return presets;
+    const q = searchQuery.toLowerCase();
+    return presets.filter(p => p.name.toLowerCase().includes(q));
+  }, [presets, searchQuery]);
+
+  const startEdit = (preset) => {
+    setEditingPreset(preset.name);
+    setFormData({ name: preset.name, segments: preset.segments.map(s => ({ ...s })) });
+    setIsCreating(false);
+  };
+
+  const startCreate = () => {
+    setEditingPreset(null);
+    setFormData({ name: "", segments: [{ start: "", count: "" }] });
+    setIsCreating(true);
+  };
+
+  const cancelEdit = () => {
+    setEditingPreset(null);
+    setIsCreating(false);
+    setFormData({ name: "", segments: [{ start: "", count: "" }] });
+  };
+
+  const updateSegment = (idx, field, val) => {
+    setFormData(prev => {
+      const segs = [...prev.segments];
+      segs[idx] = { ...segs[idx], [field]: val };
+      return { ...prev, segments: segs };
+    });
+  };
+
+  const addSegment = () => {
+    setFormData(prev => ({ ...prev, segments: [...prev.segments, { start: "", count: "" }] }));
+  };
+
+  const removeSegment = (idx) => {
+    if (formData.segments.length <= 1) return;
+    setFormData(prev => ({ ...prev, segments: prev.segments.filter((_, i) => i !== idx) }));
+  };
+
+  const saveForm = () => {
+    if (!formData.name.trim()) return;
+    const validSegs = formData.segments.filter(s => parseInt(s.start, 10) > 0 && parseInt(s.count, 10) > 0);
+    if (validSegs.length === 0) return;
+    const totalSlots = validSegs.reduce((s, seg) => s + parseInt(seg.count, 10), 0);
+    const newPreset = { name: formData.name.trim(), segments: validSegs, totalSlots };
+
+    if (editingPreset && editingPreset !== formData.name.trim()) {
+      onDeletePreset(editingPreset);
+    }
+    onSavePreset(newPreset);
+    cancelEdit();
+  };
+
+  const generatePreview = () => {
+    const nums = [];
+    for (const seg of formData.segments) {
+      const start = parseInt(seg.start, 10);
+      const count = parseInt(seg.count, 10) || 0;
+      if (isNaN(start) || count <= 0) continue;
+      for (let i = 0; i < count; i++) nums.push(String(start + i));
+    }
+    return nums;
+  };
+
+  const preview = generatePreview();
+  const isValid = formData.name.trim() && preview.length > 0;
+
+  const renderForm = () => (
+    <div style={{ background: "#ffffff08", borderRadius: 14, padding: "16px", border: "1px solid #FF950040", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#FF9500" }}>
+          {isCreating ? "新規機種登録" : "機種を編集"}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 10, color: "#888", display: "block", marginBottom: 4 }}>機種名・店舗名</label>
+        <input
+          value={formData.name}
+          onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+          placeholder="例: PAO e東京喰種"
+          style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ffffff20", background: "#ffffff08", color: "#e8e8ed", fontSize: 14, fontWeight: 600, boxSizing: "border-box" }}
+        />
+      </div>
+
+      {formData.segments.map((seg, i) => (
+        <div key={i} style={{ background: "#ffffff06", borderRadius: 10, padding: "10px 12px", marginBottom: 8, border: "1px solid #ffffff10" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 11, color: "#aaa", fontWeight: 600, minWidth: 60 }}>{i === 0 ? "先頭" : `${i + 1}番目`}</span>
+            {formData.segments.length > 1 && (
+              <button onClick={() => removeSegment(i)} style={{ marginLeft: "auto", padding: "2px 8px", borderRadius: 4, border: "1px solid #FF2D5540", background: "#FF2D5510", color: "#FF6B8A", fontSize: 10, cursor: "pointer" }}>削除</button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 10, color: "#888", display: "block", marginBottom: 2 }}>開始番号</label>
+              <input value={seg.start} onChange={e => updateSegment(i, "start", e.target.value)} type="number" inputMode="numeric" placeholder="例: 777"
+                style={{ width: "100%", padding: "7px 8px", borderRadius: 6, border: "1px solid #ffffff20", background: "#ffffff08", color: "#e8e8ed", fontSize: 14, fontWeight: 700, boxSizing: "border-box" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 10, color: "#888", display: "block", marginBottom: 2 }}>連番台数</label>
+              <input value={seg.count} onChange={e => updateSegment(i, "count", e.target.value)} type="number" inputMode="numeric" placeholder="台数"
+                style={{ width: "100%", padding: "7px 8px", borderRadius: 6, border: "1px solid #ffffff20", background: "#ffffff08", color: "#e8e8ed", fontSize: 14, fontWeight: 700, boxSizing: "border-box" }} />
+            </div>
+          </div>
+          {parseInt(seg.start, 10) > 0 && parseInt(seg.count, 10) > 0 && (
+            <div style={{ fontSize: 10, color: "#666", marginTop: 4 }}>→ {parseInt(seg.start, 10)} 〜 {parseInt(seg.start, 10) + parseInt(seg.count, 10) - 1}</div>
+          )}
+        </div>
+      ))}
+
+      <button onClick={addSegment} style={{ width: "100%", padding: "8px", borderRadius: 8, border: "1px dashed #FF950040", background: "transparent", color: "#FF9500", fontSize: 12, cursor: "pointer", marginBottom: 10, fontWeight: 600 }}>
+        + 番号が飛ぶ区間を追加
+      </button>
+
+      {preview.length > 0 && (
+        <div style={{ background: "#ffffff04", borderRadius: 8, padding: "8px 10px", marginBottom: 10, border: "1px solid #ffffff08" }}>
+          <div style={{ fontSize: 10, color: "#888", marginBottom: 3 }}>プレビュー ({preview.length}台)</div>
+          <div style={{ fontSize: 11, color: "#ccc", wordBreak: "break-all", lineHeight: 1.5 }}>
+            {preview.slice(0, 30).map((n, i) => (
+              <span key={i}>
+                {i > 0 && preview[i] !== String(parseInt(preview[i-1])+1) ? <span style={{ color: "#FF9500", fontWeight: 700 }}> | </span> : i > 0 ? ", " : ""}
+                {n}
+              </span>
+            ))}
+            {preview.length > 30 && <span style={{ color: "#666" }}> ...他{preview.length - 30}台</span>}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={cancelEdit} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "1px solid #ffffff20", background: "transparent", color: "#888", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>キャンセル</button>
+        <button onClick={saveForm} disabled={!isValid}
+          style={{ flex: 2, padding: "10px", borderRadius: 8, border: "none", background: isValid ? "linear-gradient(135deg, #34C759, #30B0C7)" : "#333", color: isValid ? "#fff" : "#888", fontSize: 13, fontWeight: 700, cursor: isValid ? "pointer" : "default" }}>
+          {isCreating ? "登録する" : "保存する"}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ background: "#ffffff06", borderRadius: 12, padding: "16px", border: "1px solid #ffffff10" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#eee" }}>機種管理</h3>
+        {!isCreating && !editingPreset && (
+          <button onClick={startCreate} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: "linear-gradient(135deg, #FF2D55, #FF9500)", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+            + 新規登録
+          </button>
+        )}
+      </div>
+
+      {(isCreating || editingPreset) && renderForm()}
+
+      {!isCreating && !editingPreset && (
+        <>
+          <div style={{ marginBottom: 12 }}>
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="機種名で検索..."
+              style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #ffffff15", background: "#ffffff08", color: "#e8e8ed", fontSize: 12, boxSizing: "border-box" }}
+            />
+          </div>
+
+          {filteredPresets.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "24px 12px", color: "#666" }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
+              <div style={{ fontSize: 12 }}>{presets.length === 0 ? "登録された機種がありません" : "検索結果がありません"}</div>
+              {presets.length === 0 && (
+                <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>「新規登録」から機種を追加できます</div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {filteredPresets.map(preset => {
+                const totalSlots = preset.segments.reduce((s, seg) => s + (parseInt(seg.count, 10) || 0), 0);
+                const firstNum = preset.segments[0]?.start || "?";
+                const lastSeg = preset.segments[preset.segments.length - 1];
+                const lastNum = lastSeg ? parseInt(lastSeg.start, 10) + parseInt(lastSeg.count, 10) - 1 : "?";
+                return (
+                  <div key={preset.name} style={{ background: "#ffffff08", borderRadius: 10, padding: "12px 14px", border: "1px solid #ffffff10" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#eee", marginBottom: 4 }}>{preset.name}</div>
+                        <div style={{ fontSize: 10, color: "#888" }}>
+                          {totalSlots}台 ({firstNum}〜{lastNum})
+                          {preset.segments.length > 1 && <span style={{ color: "#FF9500", marginLeft: 4 }}>({preset.segments.length}区間)</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => startEdit(preset)} style={{ padding: "5px 10px", borderRadius: 5, border: "1px solid #34C75940", background: "#34C75915", color: "#34C759", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>編集</button>
+                        <button onClick={() => onDeletePreset(preset.name)} style={{ padding: "5px 8px", borderRadius: 5, border: "1px solid #FF2D5540", background: "#FF2D5515", color: "#FF6B8A", fontSize: 10, cursor: "pointer" }}>削除</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ============ Main App ============
 export default function App() {
   const [images, setImages] = useState([]);
@@ -460,6 +674,7 @@ export default function App() {
         <div style={{display:"flex",gap:3,marginBottom:14,background:"#ffffff08",borderRadius:9,padding:3}}>
           <button style={tS(tab==="analyze")} onClick={()=>setTab("analyze")}>画像解析</button>
           <button style={tS(tab==="manual")} onClick={()=>setTab("manual")}>手動入力</button>
+          <button style={tS(tab==="machines")} onClick={()=>setTab("machines")}>機種管理</button>
           <button style={tS(tab==="legend")} onClick={()=>setTab("legend")}>基準</button>
         </div>
 
@@ -506,6 +721,14 @@ export default function App() {
           <button onClick={doManual} disabled={!manualInput.trim()} style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:manualInput.trim()?"linear-gradient(135deg,#34C759,#30B0C7)":"#333",color:manualInput.trim()?"#fff":"#888",fontSize:14,fontWeight:700,cursor:manualInput.trim()?"pointer":"default",marginBottom:10}}>ランク判定する</button>
           {manualResults&&<ResultsView items={manualResults} title={manualTitle||"手動入力"} />}
         </>)}
+
+        {tab==="machines"&&(
+          <MachineManager
+            presets={presets}
+            onSavePreset={savePreset}
+            onDeletePreset={deletePreset}
+          />
+        )}
 
         {tab==="legend"&&(
           <div style={{background:"#ffffff06",borderRadius:12,padding:"16px",border:"1px solid #ffffff10"}}>
